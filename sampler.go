@@ -10,9 +10,9 @@ type Sample struct {
 	val  interface{}
 }
 
-func cmpSample(s1, s2 interface{}) bool {
-	t1 := s1.(*Sample).time
-	t2 := s2.(*Sample).time
+func cmpTime(s1, s2 interface{}) bool {
+	t1 := s1.(time.Time)
+	t2 := s2.(time.Time)
 	return t1.Before(t2)
 }
 
@@ -23,12 +23,14 @@ type SimpleSampler struct {
 	duration  time.Duration
 }
 
-func NewSampler(capacity int, duration time.Duration, valCmp func(s1, s2 interface{}) bool) *SimpleSampler {
+func NewSampler(capacity int, duration time.Duration, cmpVal func(s1, s2 interface{}) bool) *SimpleSampler {
 	return &SimpleSampler{
-		timeIndex: Set.NewTreap(cmpSample),
-		valIndex:  Set.NewTreap(valCmp),
-		capacity:  capacity,
-		duration:  duration,
+		timeIndex: Set.NewTreap(cmpTime),
+		valIndex: Set.NewTreap(func(i1, i2 interface{}) bool {
+			return cmpVal(i1.(*Sample).val, i2.(*Sample).val)
+		}),
+		capacity: capacity,
+		duration: duration,
 	}
 }
 
