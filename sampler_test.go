@@ -154,8 +154,24 @@ func TestSimpleSampler_SearchFunctions(t *testing.T) {
 	assert.Nil(t, sampler.SearchVal(N))
 }
 
-func TestSimpleSampler_SearchTime(t *testing.T) {
+func TestSimpleSampler_GetMax(t *testing.T) {
+	const N = 200
+	const BaseValue = 300
+	const Period = time.Minute
+	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
 
+	assert.Nil(t, sampler.GetMax(time.Now()))
+
+	for i := 0; i < N/2; i++ {
+		sampler.Append(time.Now(), BaseValue+i)
+	}
+
+	assert.Equal(t, BaseValue+N/2-1, sampler.GetMax(time.Now()))
+	assert.Panics(t, func() {
+		sampler.GetMax(sampler.NewestTime().time)
+	})
 }
 
 func TestSimpleSampler_Observers(t *testing.T) {

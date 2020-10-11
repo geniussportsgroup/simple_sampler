@@ -80,6 +80,10 @@ func (sampler *SimpleSampler) GetMax(currTime time.Time) interface{} {
 	}
 
 	newestSample := sampler.timeIndex.Max().(*Sample)
+	if currTime.Before(newestSample.time) || currTime.Equal(newestSample.time) {
+		panic(fmt.Sprintf("currTime = %s is in the past", currTime.String()))
+	}
+
 	if newestSample.expirationTime.Before(currTime) { // all entries invalid?
 		// Yes ==> clean all indexes
 		sampler.timeIndex.Clear()
