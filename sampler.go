@@ -1,13 +1,15 @@
 package simple_sampler
 
 import (
+	"fmt"
 	Set "github.com/geniussportsgroup/treaps"
 	"time"
 )
 
 type Sample struct {
-	time time.Time
-	val  interface{}
+	time           time.Time
+	val            interface{}
+	expirationTime time.Time
 }
 
 func cmpTime(s1, s2 interface{}) bool {
@@ -39,8 +41,28 @@ func (sampler *SimpleSampler) Size() int { return sampler.timeIndex.Size() }
 
 func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 
+	moreRecentSample := sampler.NewestTime()
+	if moreRecentSample != nil && currTime.Before(moreRecentSample.time) {
+		panic(fmt.Sprintf("Insertion of sample in the past currTime %s in before last time %s",
+			currTime.String(), moreRecentSample.time.String()))
+	}
+
+	sample := &Sample{
+		time:           currTime,
+		val:            val,
+		expirationTime: currTime.Add(sampler.duration),
+	}
+
+	ok, s := sampler.valIndex.SearchOrInsert(sample)
+	if !ok { // a sample with val is already inserted?
+		// yes! ==> update it with current time
+		sampler.timeIndex.Remove(s) // remove from time index
+		sample = s.(*Sample)
+		sample.time = currTime // update time with currTime
+	}
+
 	n := sampler.valIndex.Size()
-	if n == sampler.capacity {
+	if n > sampler.capacity {
 		s := sampler.timeIndex.RemoveByPos(0) // oldest entry
 		v := sampler.valIndex.Remove(s)
 		if v != s {
@@ -48,32 +70,31 @@ func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 		}
 	}
 
-	sample := &Sample{
-		time: currTime,
-		val:  val,
+	result := sampler.timeIndex.Insert(sample)
+	if result == nil {
+		panic(fmt.Sprintf("Time %s duplicated", currTime.String()))
 	}
-	sampler.valIndex.InsertDup(sample)
-	sampler.timeIndex.InsertDup(sample)
 }
 
-func (sampler *SimpleSampler) Max(currTime time.Time) interface{} {
+func (sampler *SimpleSampler) GetMax(currTime time.Time) interface{} {
 
 	if sampler.Size() == 0 {
 		return nil
 	}
 
 	newestSample := sampler.timeIndex.Max().(*Sample)
-	if newestSample.time.Add(sampler.duration).Before(currTime) {
+	if newestSample.expirationTime.Before(currTime) { // all entries invalid?
+		// Yes ==> clean all indexes
 		sampler.timeIndex.Clear()
 		sampler.valIndex.Clear()
 		return nil
 	}
 
 	ret := sampler.valIndex.Max().(*Sample)
-	for ret.time.Add(sampler.duration).Before(currTime) {
+	for ret.expirationTime.Before(currTime) {
 		// In this case ret is not valid in period
 		s := sampler.valIndex.RemoveByPos(sampler.valIndex.Size() - 1).(*Sample) // This is the max
-		_ = sampler.timeIndex.Remove(s.time)
+		_ = sampler.timeIndex.Remove(s)
 		ret = sampler.valIndex.Max().(*Sample)
 	}
 
@@ -98,7 +119,7 @@ func (sampler *SimpleSampler) NewestTime() *Sample {
 	return sampler.timeIndex.Max().(*Sample)
 }
 
-func (sampler *SimpleSampler) OldestVal() *Sample {
+func (sampler *SimpleSampler) MinimumVal() *Sample {
 
 	if sampler.valIndex.Size() == 0 {
 		return nil
@@ -107,7 +128,7 @@ func (sampler *SimpleSampler) OldestVal() *Sample {
 	return sampler.valIndex.Min().(*Sample)
 }
 
-func (sampler *SimpleSampler) NewestVal() *Sample {
+func (sampler *SimpleSampler) MaximumVal() *Sample {
 
 	if sampler.valIndex.Size() == 0 {
 		return nil
