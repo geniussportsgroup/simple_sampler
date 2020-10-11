@@ -1,7 +1,5 @@
 # simple_sampler
 
-In this context, a sampler can be seen as a finite time series. 
-
 A simple sample is a finite time series. That is, a finite sequence of pairs containing the time when the sample was taken and the sampled value.
 
 The goal of this sampler is to quickly compute the highest value stored in the whole sequence, and it is valid respect to a specified time to live or duration, which is given at sampler creation time.
