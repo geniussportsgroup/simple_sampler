@@ -2,6 +2,7 @@ package simple_sampler
 
 import (
 	"fmt"
+	Set "github.com/geniussportsgroup/treaps"
 	"github.com/stretchr/testify/assert"
 	"math"
 	"math/rand"
@@ -26,7 +27,7 @@ func TestSimpleSampler_append(t *testing.T) {
 
 	// 990 mi
 
-	maximum := sampler.MaxVal()
+	maximum := sampler.MaximumVal()
 	timeOfMax := maximum.time
 	maxVal := maximum.val.(int)
 
@@ -101,4 +102,77 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	m = sampler.GetMax(time.Now())
 	assert.Equal(t, N+1, m)
 	fmt.Println("max=", m)
+}
+
+func TestSimpleSampler_CornerCases(t *testing.T) {
+
+	const N = 200
+	const BaseValue = 300
+	const Period = time.Minute
+
+	beginTime := time.Now()
+
+	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	for i := 0; i < N/2; i++ {
+		sampler.Append(time.Now(), BaseValue+i)
+	}
+
+	assert.Panics(t, func() {
+		sampler.Append(beginTime, 10)
+	})
+
+	secondTimeSample := sampler.timeIndex.Choose(1)
+	assert.Panics(t, func() {
+		sampler.Append(secondTimeSample.(*Sample).time, 10)
+	})
+
+}
+
+func TestSimpleSampler_SearchFunctions(t *testing.T) {
+	const N = 200
+	const BaseValue = 300
+	const Period = time.Minute
+	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	beginTime := time.Now()
+
+	for i := 0; i < N/2; i++ {
+		sampler.Append(time.Now(), BaseValue+i)
+	}
+
+	for it := Set.NewIterator(sampler.timeIndex); it.HasCurr(); it.Next() {
+		assert.NotNil(t, sampler.SearchTime(it.GetCurr().(*Sample).time))
+		assert.NotNil(t, sampler.SearchVal(it.GetCurr().(*Sample).val))
+	}
+
+	assert.Nil(t, sampler.SearchTime(beginTime))
+	assert.Nil(t, sampler.SearchVal(N))
+}
+
+func TestSimpleSampler_SearchTime(t *testing.T) {
+
+}
+
+func TestSimpleSampler_Observers(t *testing.T) {
+	const N = 200
+	const BaseValue = 300
+	const Period = time.Minute
+	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	assert.Nil(t, sampler.MaximumVal())
+	assert.Nil(t, sampler.MinimumVal())
+	assert.Nil(t, sampler.GetMax(time.Now()))
+	assert.Nil(t, sampler.OldestTime())
+	for i := 0; i < N/2; i++ {
+		sampler.Append(time.Now(), BaseValue+i)
+	}
+	assert.Equal(t, BaseValue, sampler.MinimumVal().val)
+	assert.Equal(t, BaseValue+N/2-1, sampler.MaximumVal().val)
 }

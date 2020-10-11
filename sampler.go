@@ -43,7 +43,7 @@ func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 
 	moreRecentSample := sampler.NewestTime()
 	if moreRecentSample != nil && currTime.Before(moreRecentSample.time) {
-		panic(fmt.Sprintf("Insertion of sample in the past currTime %s in before last time %s",
+		panic(fmt.Sprintf("Insertion of sample in the past, currTime = %s more recent time %s",
 			currTime.String(), moreRecentSample.time.String()))
 	}
 
@@ -70,10 +70,7 @@ func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 		}
 	}
 
-	result := sampler.timeIndex.Insert(sample)
-	if result == nil {
-		panic(fmt.Sprintf("Time %s duplicated", currTime.String()))
-	}
+	_ = sampler.timeIndex.Insert(sample) // it is impossible sample.time is duplicated because is after more recent
 }
 
 func (sampler *SimpleSampler) GetMax(currTime time.Time) interface{} {
@@ -165,13 +162,4 @@ func (sampler *SimpleSampler) SearchVal(val interface{}) *Sample {
 	}
 
 	return ret.(*Sample)
-}
-
-func (sampler *SimpleSampler) MaxVal() *Sample {
-
-	if sampler.valIndex.Size() == 0 {
-		return nil
-	}
-
-	return sampler.valIndex.Max().(*Sample)
 }
