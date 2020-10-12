@@ -169,9 +169,6 @@ func TestSimpleSampler_GetMax(t *testing.T) {
 	}
 
 	assert.Equal(t, BaseValue+N/2-1, sampler.GetMax(time.Now()))
-	assert.Panics(t, func() {
-		sampler.GetMax(sampler.NewestTime().time)
-	})
 }
 
 func TestSimpleSampler_Observers(t *testing.T) {
