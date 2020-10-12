@@ -28,6 +28,4 @@ The method panics if `time` is before the last inserted sample (time must be mon
 
 Use the method `GetMax(currTime time.Time)` which returns the highest stored value valid respect to the duration. If all the stored samples are already invalid respect to `currTime`, then these ones are deleted, and the sampler becomes empty.
 
-`currTime` must be recent that the last inserted sample; otherwise the method panics.
-
 If not sample is found, then the method returns `nil`.
