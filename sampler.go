@@ -1,7 +1,6 @@
 package simple_sampler
 
 import (
-	"fmt"
 	Set "github.com/geniussportsgroup/treaps"
 	"time"
 )
@@ -40,12 +39,6 @@ func NewSampler(capacity int, duration time.Duration, cmpVal func(s1, s2 interfa
 func (sampler *SimpleSampler) Size() int { return sampler.timeIndex.Size() }
 
 func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
-
-	moreRecentSample := sampler.NewestTime()
-	if moreRecentSample != nil && currTime.Before(moreRecentSample.time) {
-		panic(fmt.Sprintf("Insertion of sample in the past, currTime = %s more recent time %s",
-			currTime.String(), moreRecentSample.time.String()))
-	}
 
 	sample := &Sample{
 		time:           currTime,
