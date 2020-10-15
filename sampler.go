@@ -24,6 +24,8 @@ type SimpleSampler struct {
 	duration  time.Duration
 }
 
+// Create a simple sampler with capacity as maximum number of entries and a duration time. The entries will
+// be compared with the function less
 func NewSampler(capacity int, duration time.Duration, cmpVal func(s1, s2 interface{}) bool) *SimpleSampler {
 
 	return &SimpleSampler{
@@ -38,6 +40,8 @@ func NewSampler(capacity int, duration time.Duration, cmpVal func(s1, s2 interfa
 
 func (sampler *SimpleSampler) Size() int { return sampler.timeIndex.Size() }
 
+// Add a new sample at time currTime with a specific val. If it already exists a sample containing
+// val, then its time is updated
 func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 
 	sample := &Sample{
@@ -66,6 +70,7 @@ func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 	_ = sampler.timeIndex.Insert(sample) // it is impossible sample.time is duplicated because is after more recent
 }
 
+// Returns the maximum valid sample respect the specified duration
 func (sampler *SimpleSampler) GetMax(currTime time.Time) interface{} {
 
 	if sampler.Size() == 0 {
