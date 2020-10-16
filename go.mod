@@ -1,4 +1,4 @@
-module simple_sampler
+module github.com/geniussportsgroup/simple_sampler
 
 go 1.13
 
