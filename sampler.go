@@ -1,7 +1,9 @@
 package simple_sampler
 
 import (
+	"encoding/json"
 	Set "github.com/geniussportsgroup/treaps"
+	"sync"
 	"time"
 )
 
@@ -160,4 +162,35 @@ func (sampler *SimpleSampler) SearchVal(val interface{}) *Sample {
 	}
 
 	return ret.(*Sample)
+}
+
+type JsonSample struct {
+	Time           string
+	ExpirationTime string
+	Val            string
+}
+
+func (sampler *SimpleSampler) consultEndpoint(lock *sync.Mutex,
+	convertVal func(interface{}) string) ([]byte, error) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	samples := make([]string, 0, sampler.Size())
+	for it := Set.NewIterator(sampler.timeIndex); it.HasCurr(); it.Next() {
+		sample := it.GetCurr().(*Sample)
+		jsonSample := &JsonSample{
+			Time:           sample.time.Format(time.RFC3339Nano),
+			ExpirationTime: sample.expirationTime.Format(time.RFC3339Nano),
+			Val:            convertVal(sample.val),
+		}
+		j, err := json.Marshal(jsonSample)
+		if err != nil {
+			return nil, err
+		}
+		samples = append(samples, string(j))
+	}
+
+	ret, err := json.Marshal(samples)
+
+	return ret, err
 }

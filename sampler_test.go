@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"math"
 	"math/rand"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -188,4 +190,25 @@ func TestSimpleSampler_Observers(t *testing.T) {
 	}
 	assert.Equal(t, BaseValue, sampler.MinimumVal().val)
 	assert.Equal(t, BaseValue+N/2-1, sampler.MaximumVal().val)
+}
+
+func TestSimpleSampler_consultEndpoint(t *testing.T) {
+	lock := new(sync.Mutex)
+
+	const N = 200
+	const BaseValue = 300
+	const Period = time.Minute
+	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	for i := 0; i < N; i++ {
+		sampler.Append(time.Now(), 100+rand.Intn(BaseValue))
+	}
+
+	b, _ := sampler.consultEndpoint(lock, func(i interface{}) string {
+		return strconv.Itoa(i.(int))
+	})
+
+	fmt.Println(string(b))
 }
