@@ -112,8 +112,6 @@ func TestSimpleSampler_CornerCases(t *testing.T) {
 	const BaseValue = 300
 	const Period = time.Minute
 
-	beginTime := time.Now()
-
 	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
@@ -121,15 +119,6 @@ func TestSimpleSampler_CornerCases(t *testing.T) {
 	for i := 0; i < N/2; i++ {
 		sampler.Append(time.Now(), BaseValue+i)
 	}
-
-	assert.Panics(t, func() {
-		sampler.Append(beginTime, 10)
-	})
-
-	secondTimeSample := sampler.timeIndex.Choose(1)
-	assert.Panics(t, func() {
-		sampler.Append(secondTimeSample.(*Sample).time, 10)
-	})
 
 }
 
