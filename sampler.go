@@ -170,6 +170,7 @@ type JsonSample struct {
 	Val            string
 }
 
+// Helper for consulting all the samples. To be used by and endpoint
 func (sampler *SimpleSampler) consultEndpoint(lock *sync.Mutex,
 	convertVal func(interface{}) string) ([]byte, error) {
 	lock.Lock()
