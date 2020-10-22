@@ -1,9 +1,16 @@
 package simple_sampler
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	Set "github.com/geniussportsgroup/treaps"
+	"sync"
 	"time"
 )
+
+const MinCapacity = 10
+const MinDuration = 10 * time.Second
 
 type Sample struct {
 	time           time.Time
@@ -36,6 +43,44 @@ func NewSampler(capacity int, duration time.Duration, cmpVal func(s1, s2 interfa
 		capacity: capacity,
 		duration: duration,
 	}
+}
+
+// Set new values for capacity and duration
+func (sampler *SimpleSampler) Set(capacity int, duration time.Duration) (err error) {
+
+	if capacity < MinCapacity {
+		err = errors.New(fmt.Sprintf("new capacity %d is less than minimum allowed %d",
+			capacity, MinCapacity))
+		return
+	}
+
+	if duration < MinDuration {
+		err = errors.New(fmt.Sprintf("new duration %s is less than minimum allowed %s",
+			fmtDuration(duration), fmtDuration(MinDuration)))
+		return
+	}
+
+	for capacity < sampler.Size() {
+		oldestSample := sampler.timeIndex.RemoveByPos(0)
+		valSample := sampler.valIndex.Remove(oldestSample.(*Sample))
+		if valSample == nil {
+			err = errors.New("inconsistency has been detected. Probably a bug")
+			sampler.timeIndex.Insert(oldestSample)
+			return
+		}
+	}
+
+	sampler.capacity = capacity
+
+	if duration != sampler.duration {
+		for it := Set.NewIterator(sampler.timeIndex); it.HasCurr(); it.Next() {
+			sample := it.GetCurr().(*Sample)
+			sample.expirationTime = sample.time.Add(duration)
+		}
+		sampler.duration = duration
+	}
+
+	return
 }
 
 func (sampler *SimpleSampler) Size() int { return sampler.timeIndex.Size() }
@@ -160,4 +205,44 @@ func (sampler *SimpleSampler) SearchVal(val interface{}) *Sample {
 	}
 
 	return ret.(*Sample)
+}
+
+type JsonSample struct {
+	Time           string
+	ExpirationTime string
+	Val            string
+}
+
+// Helper for consulting all the samples. To be used by and endpoint
+func (sampler *SimpleSampler) consultEndpoint(lock *sync.Mutex,
+	convertVal func(interface{}) string) ([]byte, error) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	samples := make([]string, 0, sampler.Size())
+	for it := Set.NewIterator(sampler.timeIndex); it.HasCurr(); it.Next() {
+		sample := it.GetCurr().(*Sample)
+		jsonSample := &JsonSample{
+			Time:           sample.time.Format(time.RFC3339Nano),
+			ExpirationTime: sample.expirationTime.Format(time.RFC3339Nano),
+			Val:            convertVal(sample.val),
+		}
+		j, err := json.Marshal(jsonSample)
+		if err != nil {
+			return nil, err
+		}
+		samples = append(samples, string(j))
+	}
+
+	ret, err := json.Marshal(samples)
+
+	return ret, err
+}
+
+func fmtDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+	h := d / time.Hour
+	d -= h * time.Hour
+	m := d / time.Minute
+	return fmt.Sprintf("%02d:%02d", h, m)
 }
