@@ -201,3 +201,44 @@ func TestSimpleSampler_consultEndpoint(t *testing.T) {
 
 	fmt.Println(string(b))
 }
+
+func TestSimpleSampler_Set(t *testing.T) {
+
+	const N = 200
+	const BaseValue = 300
+	const Period = 10 * time.Minute
+	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	for i := 0; i < N; i++ {
+		sampler.Append(time.Now(), 100+rand.Intn(BaseValue))
+	}
+
+	numSamples := sampler.Size()
+	fmt.Println("Num Samples =", numSamples)
+
+	// now we reduce the capacity to N/2
+	remaining := numSamples - N/2
+	toBeEvicted := make([]*Sample, 0, remaining)
+	for i := 0; i < remaining; i++ {
+		toBeEvicted = append(toBeEvicted, sampler.timeIndex.Choose(i).(*Sample))
+	}
+
+	sampler.Set(N/2, Period)
+
+	assert.Equal(t, N/2, sampler.capacity)
+
+	// now we verify that remaining were indeed evicted
+	for _, sample := range toBeEvicted {
+		assert.Nil(t, sampler.timeIndex.Search(sample))
+	}
+
+	// now we reduce the duration to 30 seconds
+	sampler.Set(N/2, 30*time.Second)
+
+	// we wait 31 seconds and the sampler should be empty
+	time.Sleep(31 * time.Second)
+
+	assert.Nil(t, sampler.GetMax(time.Now()))
+}
