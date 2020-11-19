@@ -56,7 +56,7 @@ func (sampler *SimpleSampler) Set(capacity int, duration time.Duration) (err err
 
 	if duration < MinDuration {
 		err = errors.New(fmt.Sprintf("new duration %s is less than minimum allowed %s",
-			fmtDuration(duration), fmtDuration(MinDuration)))
+			FmtDuration(duration), FmtDuration(MinDuration)))
 		return
 	}
 
@@ -214,7 +214,7 @@ type JsonSample struct {
 }
 
 // Helper for consulting all the samples. To be used by and endpoint
-func (sampler *SimpleSampler) consultEndpoint(lock *sync.Mutex,
+func (sampler *SimpleSampler) ConsultEndpoint(lock *sync.Mutex,
 	convertVal func(interface{}) string) ([]byte, error) {
 	lock.Lock()
 	defer lock.Unlock()
@@ -239,10 +239,49 @@ func (sampler *SimpleSampler) consultEndpoint(lock *sync.Mutex,
 	return ret, err
 }
 
-func fmtDuration(d time.Duration) string {
+// Helper for stringficate a duration type
+func FmtDuration(d time.Duration) string {
 	d = d.Round(time.Minute)
 	h := d / time.Hour
 	d -= h * time.Hour
 	m := d / time.Minute
 	return fmt.Sprintf("%02d:%02d", h, m)
+}
+
+// Helpers for sampling when request arrives
+func (sampler *SimpleSampler) RequestArrives(requestCount *int, lock *sync.Mutex,
+	notifyToScaler func(currTime time.Time)) (startTime time.Time) {
+
+	startTime = time.Now()
+	lock.Lock()
+	defer lock.Unlock()
+	*requestCount++
+	sampler.Append(startTime, *requestCount)
+	notifyToScaler(startTime) // notify load controller
+	return startTime
+}
+
+// Helper for sampling when request finishes
+func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mutex,
+	timeOfLastRequest *time.Time, itWasSuccessful bool) {
+
+	endTime := time.Now()
+	lock.Lock()
+	defer lock.Unlock()
+	*requestCount--
+	sampler.Append(endTime, *requestCount)
+	if !itWasSuccessful {
+		return
+	}
+
+	*timeOfLastRequest = endTime
+}
+
+// Helper for reading number of samples. It does not take lock!
+func (sampler *SimpleSampler) GetNumRequest(currTime time.Time) int {
+	res := sampler.GetMax(currTime)
+	if res == nil {
+		return 0
+	}
+	return res.(int)
 }
