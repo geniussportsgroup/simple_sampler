@@ -195,7 +195,7 @@ func TestSimpleSampler_consultEndpoint(t *testing.T) {
 		sampler.Append(time.Now(), 100+rand.Intn(BaseValue))
 	}
 
-	b, _ := sampler.consultEndpoint(lock, func(i interface{}) string {
+	b, _ := sampler.ConsultEndpoint(lock, func(i interface{}) string {
 		return strconv.Itoa(i.(int))
 	})
 
