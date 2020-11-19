@@ -277,8 +277,10 @@ func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mute
 	*timeOfLastRequest = endTime
 }
 
-// Helper for reading number of samples. It does not take lock!
-func (sampler *SimpleSampler) GetNumRequest(currTime time.Time) int {
+// Helper for reading number of samples.
+func (sampler *SimpleSampler) GetNumRequest(currTime time.Time, lock *sync.Mutex) int {
+	lock.Lock()
+	defer lock.Unlock()
 	res := sampler.GetMax(currTime)
 	if res == nil {
 		return 0
