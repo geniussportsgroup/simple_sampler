@@ -261,16 +261,18 @@ func (sampler *SimpleSampler) RequestArrives(requestCount *int, lock *sync.Mutex
 	return startTime
 }
 
-// Helper for sampling when request finishes
+// Helper for sampling when request finishes.
+// The reason from which itWasSuccessful is a pointer is for handling from defer clauses which
+// receive copies
 func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mutex,
-	timeOfLastRequest *time.Time, itWasSuccessful bool) {
+	timeOfLastRequest *time.Time, itWasSuccessful *bool) {
 
 	endTime := time.Now()
 	lock.Lock()
 	defer lock.Unlock()
 	*requestCount--
 	sampler.Append(endTime, *requestCount)
-	if !itWasSuccessful {
+	if !*itWasSuccessful {
 		return
 	}
 

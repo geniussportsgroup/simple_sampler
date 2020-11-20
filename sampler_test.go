@@ -36,7 +36,7 @@ func TestSimpleSampler_append(t *testing.T) {
 	fmt.Println(timeOfMax.String())
 	fmt.Println("max =", maxVal)
 
-	assert.Equal(t, max, sampler.GetMax(time.Now()))
+	assert.Equal(t, max, sampler.GetMax(time.Now()).val.(int))
 
 	oldestSample := sampler.OldestTime()
 	assert.Equal(t, oldestSample, sampler.SearchTime(oldestSample.time))
@@ -65,7 +65,7 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	}
 
 	assert.Equal(t, N/2, sampler.Size())
-	assert.Equal(t, BaseValue+N/2-1, sampler.GetMax(time.Now()))
+	assert.Equal(t, BaseValue+N/2-1, sampler.GetMax(time.Now()).val.(int))
 
 	time.Sleep(Period) // after all the entries should have expired
 
@@ -75,7 +75,7 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	for i := 0; i < N/2; i++ {
 		sampler.Append(time.Now(), BaseValue+i)
 	}
-	m := sampler.GetMax(time.Now())
+	m := sampler.GetMax(time.Now()).val.(int)
 	fmt.Println("max=", m)
 	time.Sleep(28 * time.Second)
 	for i := 0; i < N/2; i++ {
@@ -84,7 +84,7 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	// In this moment the sample contains exactly N entries (its capacity)
 
 	assert.Equal(t, N, sampler.Size())
-	m = sampler.GetMax(time.Now())
+	m = sampler.GetMax(time.Now()).val.(int)
 	fmt.Println("max=", m)
 	assert.Equal(t, BaseValue+N/2-1, m)
 
@@ -101,7 +101,7 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	// now we manage for making the maximum invalid in period
 	time.Sleep(33 * time.Second)
 	// Elapsed this time, the first N/2 entries should have been evicted
-	m = sampler.GetMax(time.Now())
+	m = sampler.GetMax(time.Now()).val.(int)
 	assert.Equal(t, N+1, m)
 	fmt.Println("max=", m)
 }
@@ -119,7 +119,6 @@ func TestSimpleSampler_CornerCases(t *testing.T) {
 	for i := 0; i < N/2; i++ {
 		sampler.Append(time.Now(), BaseValue+i)
 	}
-
 }
 
 func TestSimpleSampler_SearchFunctions(t *testing.T) {
@@ -159,7 +158,7 @@ func TestSimpleSampler_GetMax(t *testing.T) {
 		sampler.Append(time.Now(), BaseValue+i)
 	}
 
-	assert.Equal(t, BaseValue+N/2-1, sampler.GetMax(time.Now()))
+	assert.Equal(t, BaseValue+N/2-1, sampler.GetMax(time.Now()).val.(int))
 }
 
 func TestSimpleSampler_Observers(t *testing.T) {
