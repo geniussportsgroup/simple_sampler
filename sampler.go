@@ -116,7 +116,7 @@ func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 }
 
 // Returns the maximum valid sample respect the specified duration
-func (sampler *SimpleSampler) GetMax(currTime time.Time) interface{} {
+func (sampler *SimpleSampler) GetMax(currTime time.Time) *Sample {
 
 	if sampler.Size() == 0 {
 		return nil
@@ -138,7 +138,7 @@ func (sampler *SimpleSampler) GetMax(currTime time.Time) interface{} {
 		ret = sampler.valIndex.Max().(*Sample)
 	}
 
-	return ret.val
+	return ret
 }
 
 func (sampler *SimpleSampler) OldestTime() *Sample {
@@ -277,24 +277,20 @@ func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mute
 	*timeOfLastRequest = endTime
 }
 
-// Helper for reading number of samples.
-func (sampler *SimpleSampler) GetNumRequest(currTime time.Time, lock *sync.Mutex) int {
+// Helper for reading number of samples. It does not take lock
+func (sampler *SimpleSampler) GetNumRequest(currTime time.Time) int {
 
-	lock.Lock()
-	defer lock.Unlock()
 	res := sampler.GetMax(currTime)
 	if res == nil {
 		return 0
 	}
-	return res.(int)
+	return res.val.(int)
 }
 
-func (sampler *SimpleSampler) GetMaxSample(currTime time.Time,
-	lock *sync.Mutex) (int, time.Time, time.Time) {
+// Helper similar than above but retrieves full sample
+func (sampler *SimpleSampler) GetMaxSample(currTime time.Time) (int, time.Time, time.Time) {
 
-	lock.Lock()
-	defer lock.Unlock()
-	sample := sampler.MaximumVal()
+	sample := sampler.GetMax(currTime)
 	if sample == nil {
 		return 0, currTime, currTime
 	}
