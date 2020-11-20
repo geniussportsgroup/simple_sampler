@@ -279,6 +279,7 @@ func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mute
 
 // Helper for reading number of samples.
 func (sampler *SimpleSampler) GetNumRequest(currTime time.Time, lock *sync.Mutex) int {
+
 	lock.Lock()
 	defer lock.Unlock()
 	res := sampler.GetMax(currTime)
@@ -286,4 +287,17 @@ func (sampler *SimpleSampler) GetNumRequest(currTime time.Time, lock *sync.Mutex
 		return 0
 	}
 	return res.(int)
+}
+
+func (sampler *SimpleSampler) GetMaxSample(currTime time.Time,
+	lock *sync.Mutex) (int, time.Time, time.Time) {
+
+	lock.Lock()
+	defer lock.Unlock()
+	sample := sampler.MaximumVal()
+	if sample == nil {
+		return 0, currTime, currTime
+	}
+
+	return sample.val.(int), sample.time, sample.expirationTime
 }
