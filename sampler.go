@@ -89,19 +89,17 @@ func (sampler *SimpleSampler) Size() int { return sampler.timeIndex.Size() }
 // val, then its time is updated
 func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 
-	sample := &Sample{
-		time:           currTime,
-		val:            val,
-		expirationTime: currTime.Add(sampler.duration),
-	}
+	sample := &Sample{val: val}
 
-	ok, s := sampler.valIndex.SearchOrInsert(sample)
-	if !ok { // a sample with val is already inserted?
+	wasInserted, s := sampler.valIndex.SearchOrInsert(sample)
+	if !wasInserted { // a sample with val is already inserted?
 		// yes! ==> update it with current time
 		sampler.timeIndex.Remove(s) // remove from time index
-		sample = s.(*Sample)
-		sample.time = currTime // update time with currTime
+		sample = s.(*Sample)        // previously built sample is discharged
 	}
+
+	sample.time = currTime // update time with currTime
+	sample.expirationTime = currTime.Add(sampler.duration)
 
 	n := sampler.valIndex.Size()
 	if n > sampler.capacity {
@@ -123,7 +121,7 @@ func (sampler *SimpleSampler) GetMax(currTime time.Time) *Sample {
 	}
 
 	newestSample := sampler.timeIndex.Max().(*Sample)
-	if newestSample.expirationTime.Before(currTime) { // all entries invalid?
+	if newestSample.expirationTime.Before(currTime) { // all entries expired?
 		// Yes ==> clean all indexes
 		sampler.timeIndex.Clear()
 		sampler.valIndex.Clear()
