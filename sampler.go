@@ -12,10 +12,17 @@ import (
 const MinCapacity = 10
 const MinDuration = 10 * time.Second
 
+var TimeOfLastRequest time.Time
+
 type Sample struct {
 	time           time.Time
 	val            interface{}
 	expirationTime time.Time
+}
+
+type LatencySample struct {
+	latency  time.Duration
+	lastTime time.Time
 }
 
 func cmpTime(s1, s2 interface{}) bool {
@@ -24,25 +31,102 @@ func cmpTime(s1, s2 interface{}) bool {
 	return t1.Before(t2)
 }
 
+func cmpLatency(s1, s2 interface{}) bool {
+	return s1.(*LatencySample).latency < s2.(*LatencySample).latency
+}
+
 type SimpleSampler struct {
-	timeIndex *Set.Treap
-	valIndex  *Set.Treap
-	capacity  int
-	duration  time.Duration
+	timeIndex    *Set.Treap // stores the samples indexed by time
+	valIndex     *Set.Treap // stores the samples indexed by value
+	maxLatencies *Set.Treap // Subset of maximum latencies detected
+	maxRequests  *Set.Treap // Subset of maximum number of request detected
+	capacity     int
+	subCapacity  int
+	duration     time.Duration
 }
 
 // Create a simple sampler with capacity as maximum number of entries and a duration time. The entries will
 // be compared with the function less
-func NewSampler(capacity int, duration time.Duration, cmpVal func(s1, s2 interface{}) bool) *SimpleSampler {
+func NewSampler(capacity int, duration time.Duration, subSetCapacity int,
+	cmpVal func(s1, s2 interface{}) bool) *SimpleSampler {
 
-	return &SimpleSampler{
-		timeIndex: Set.NewTreap(cmpTime),
-		valIndex: Set.NewTreap(func(i1, i2 interface{}) bool {
-			return cmpVal(i1.(*Sample).val, i2.(*Sample).val)
-		}),
-		capacity: capacity,
-		duration: duration,
+	if subSetCapacity >= capacity {
+		panic(fmt.Sprintf("subset capacity %d is greater or equal than capacity %d",
+			subSetCapacity, capacity))
 	}
+
+	cmpReq := func(i1, i2 interface{}) bool {
+		return cmpVal(i1.(*Sample).val, i2.(*Sample).val)
+	}
+
+	ret := &SimpleSampler{
+		timeIndex:   Set.NewTreap(cmpTime),
+		valIndex:    Set.NewTreap(cmpReq),
+		capacity:    capacity,
+		subCapacity: subSetCapacity,
+		duration:    duration,
+	}
+
+	if subSetCapacity != 0 {
+		ret.maxLatencies = Set.NewTreap(cmpLatency)
+		ret.maxRequests = Set.NewTreap(cmpReq)
+	}
+
+	return ret
+}
+
+func (sampler *SimpleSampler) updateMaxRequests(sample *Sample) {
+
+	if sampler.subCapacity == 0 { // is subset active?
+		return
+	}
+
+	if sampler.maxRequests.Size() < sampler.subCapacity { // is subset full?
+		// Not ==> just insert it or update if if it is already inserted
+		wasInserted, s := sampler.maxRequests.SearchOrInsert(sample)
+		if !wasInserted {
+			s.(*Sample).time = sample.time
+			s.(*Sample).expirationTime = sample.expirationTime
+		}
+		return
+	}
+
+	// In this point subset is full ==> eventually we might insert this sample
+	minSample := sampler.maxRequests.Min()
+	if sample.val.(int) < minSample.(*Sample).val.(int) {
+		return // this sample does not belong to the subset of the maximum number of requests
+	}
+
+	wasInserted, s := sampler.maxRequests.SearchOrInsert(sample)
+	if !wasInserted {
+		s.(*Sample).time = sample.time
+		s.(*Sample).expirationTime = sample.expirationTime
+	}
+}
+
+func (sampler *SimpleSampler) updateMaxLatency(latency time.Duration, currTime time.Time) {
+
+	if sampler.subCapacity == 0 {
+		return
+	}
+
+	latencySample := &LatencySample{
+		latency:  latency,
+		lastTime: currTime,
+	}
+
+	if sampler.maxLatencies.Size() < sampler.subCapacity { // subset full?
+		// Not ==> ust insert it or update if if it is already inserted
+		wasInserted, s := sampler.maxLatencies.SearchOrInsert(latencySample)
+		if !wasInserted {
+			s.(*Sample).time = currTime // expiration time does not matter in this case
+		}
+		return
+	}
+
+	// In this point subset is full ==> eventually we might insert this sample
+	mimLatencySample := sampler.maxLatencies.Min()
+
 }
 
 // Set new values for capacity and duration

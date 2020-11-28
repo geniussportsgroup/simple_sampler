@@ -16,7 +16,7 @@ func TestSimpleSampler_append(t *testing.T) {
 
 	const RandBase = 300
 	const N = 100
-	sampler := NewSampler(100, time.Minute, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(100, time.Minute, 10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -56,7 +56,7 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	const BaseValue = 300
 	const Period = time.Minute
 
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, 0.05*N, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -112,7 +112,7 @@ func TestSimpleSampler_CornerCases(t *testing.T) {
 	const BaseValue = 300
 	const Period = time.Minute
 
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -125,7 +125,7 @@ func TestSimpleSampler_SearchFunctions(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -148,7 +148,7 @@ func TestSimpleSampler_GetMax(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -165,7 +165,7 @@ func TestSimpleSampler_Observers(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -186,7 +186,7 @@ func TestSimpleSampler_consultEndpoint(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -206,7 +206,7 @@ func TestSimpleSampler_Set(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = 10 * time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
