@@ -241,3 +241,57 @@ func TestSimpleSampler_Set(t *testing.T) {
 
 	assert.Nil(t, sampler.GetMax(time.Now()))
 }
+
+func TestSimpleSampler_updateMaxLatency(t *testing.T) {
+	const N = 20000
+	const NumThreads = 200
+	const BaseValue = 300
+	const Period = 10 * time.Minute
+	sampler := NewSampler(N, Period, 10, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	var numRequests int
+	var stateLock sync.Mutex
+	notifyToScaler := func(t time.Time) {}
+	for i := 0; i < 100; i++ {
+
+		var wg sync.WaitGroup
+		wg.Add(NumThreads)
+		for k := 0; k < NumThreads; k++ {
+
+			go func(wg *sync.WaitGroup) {
+				arrivalTime := sampler.RequestArrives(&numRequests, &stateLock, notifyToScaler)
+				latency := time.Duration(100+200*rand.ExpFloat64()) * time.Millisecond
+				time.Sleep(latency)
+				success := true
+				sampler.RequestFinishes(&numRequests, &stateLock, arrivalTime, &success)
+				wg.Done()
+			}(&wg)
+		}
+
+		wg.Wait()
+	}
+
+	assert.LessOrEqual(t, 10, sampler.maxRequests.Size())
+	assert.LessOrEqual(t, 10, sampler.maxLatencies.Size())
+
+	fmt.Println("Max latencies")
+	for it := Set.NewIterator(sampler.maxLatencies); it.HasCurr(); it.Next() {
+		latSample := it.GetCurr().(*LatencySample)
+		fmt.Println(latSample.latency, " ", latSample.lastTime)
+	}
+
+	fmt.Println()
+	fmt.Println("Max Number of Requests")
+	for it := Set.NewIterator(sampler.maxRequests); it.HasCurr(); it.Next() {
+		sample := it.GetCurr().(*Sample)
+		fmt.Println(sample.val, " ", sample.time, " ", sample.expirationTime)
+	}
+
+	str, err := sampler.ConsultMaximumsEndpoint(&stateLock, func(i interface{}) string {
+		return strconv.Itoa(i.(int))
+	})
+	assert.Nil(t, err)
+	fmt.Println(string(str))
+}
