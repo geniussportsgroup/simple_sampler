@@ -16,7 +16,7 @@ func TestSimpleSampler_append(t *testing.T) {
 
 	const RandBase = 300
 	const N = 100
-	sampler := NewSampler(100, time.Minute, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(100, time.Minute, 10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -56,7 +56,7 @@ func TestSimpleSampler_Correctness(t *testing.T) {
 	const BaseValue = 300
 	const Period = time.Minute
 
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, 0.05*N, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -112,7 +112,7 @@ func TestSimpleSampler_CornerCases(t *testing.T) {
 	const BaseValue = 300
 	const Period = time.Minute
 
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -125,7 +125,7 @@ func TestSimpleSampler_SearchFunctions(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -148,7 +148,7 @@ func TestSimpleSampler_GetMax(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -165,7 +165,7 @@ func TestSimpleSampler_Observers(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -186,7 +186,7 @@ func TestSimpleSampler_consultEndpoint(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -206,7 +206,7 @@ func TestSimpleSampler_Set(t *testing.T) {
 	const N = 200
 	const BaseValue = 300
 	const Period = 10 * time.Minute
-	sampler := NewSampler(N, Period, func(s1, s2 interface{}) bool {
+	sampler := NewSampler(N, Period, N/10, func(s1, s2 interface{}) bool {
 		return s1.(int) < s2.(int)
 	})
 
@@ -240,4 +240,58 @@ func TestSimpleSampler_Set(t *testing.T) {
 	time.Sleep(31 * time.Second)
 
 	assert.Nil(t, sampler.GetMax(time.Now()))
+}
+
+func TestSimpleSampler_updateMaxLatency(t *testing.T) {
+	const N = 20000
+	const NumThreads = 200
+	const BaseValue = 300
+	const Period = 10 * time.Minute
+	sampler := NewSampler(N, Period, 10, func(s1, s2 interface{}) bool {
+		return s1.(int) < s2.(int)
+	})
+
+	var numRequests int
+	var stateLock sync.Mutex
+	notifyToScaler := func(t time.Time) {}
+	for i := 0; i < 100; i++ {
+
+		var wg sync.WaitGroup
+		wg.Add(NumThreads)
+		for k := 0; k < NumThreads; k++ {
+
+			go func(wg *sync.WaitGroup) {
+				arrivalTime := sampler.RequestArrives(&numRequests, &stateLock, notifyToScaler)
+				latency := time.Duration(100+200*rand.ExpFloat64()) * time.Millisecond
+				time.Sleep(latency)
+				success := true
+				sampler.RequestFinishes(&numRequests, &stateLock, arrivalTime, &success)
+				wg.Done()
+			}(&wg)
+		}
+
+		wg.Wait()
+	}
+
+	assert.LessOrEqual(t, 10, sampler.maxRequests.Size())
+	assert.LessOrEqual(t, 10, sampler.maxLatencies.Size())
+
+	fmt.Println("Max latencies")
+	for it := Set.NewIterator(sampler.maxLatencies); it.HasCurr(); it.Next() {
+		latSample := it.GetCurr().(*LatencySample)
+		fmt.Println(latSample.latency, " ", latSample.lastTime)
+	}
+
+	fmt.Println()
+	fmt.Println("Max Number of Requests")
+	for it := Set.NewIterator(sampler.maxRequests); it.HasCurr(); it.Next() {
+		sample := it.GetCurr().(*Sample)
+		fmt.Println(sample.val, " ", sample.time, " ", sample.expirationTime)
+	}
+
+	str, err := sampler.ConsultMaximumsEndpoint(&stateLock, func(i interface{}) string {
+		return strconv.Itoa(i.(int))
+	})
+	assert.Nil(t, err)
+	fmt.Println(string(str))
 }
