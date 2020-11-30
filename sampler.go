@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	Set "github.com/geniussportsgroup/treaps"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -297,41 +296,35 @@ func (sampler *SimpleSampler) SearchVal(val interface{}) *Sample {
 }
 
 type JsonSample struct {
-	Time           string
-	ExpirationTime string
-	Val            string
+	Time           time.Time
+	ExpirationTime time.Time
+	Val            int
 }
 
 type JsonLatencySample struct {
-	Latency  string
-	LastTime string
+	Latency  int // msec
+	LastTime time.Time
 }
 
 type JsonMaximums struct {
-	MaxRequests  []string
-	MaxLatencies []string
+	MaxRequests  []*JsonSample
+	MaxLatencies []*JsonLatencySample
 }
 
 // Helper for consulting all the samples. To be used by and endpoint
-func (sampler *SimpleSampler) ConsultEndpoint(lock *sync.Mutex,
-	convertVal func(interface{}) string) ([]byte, error) {
+func (sampler *SimpleSampler) ConsultEndpoint(lock *sync.Mutex) ([]byte, error) {
 
 	lock.Lock()
 	defer lock.Unlock()
 
-	samples := make([]string, 0, sampler.Size())
+	samples := make([]*JsonSample, 0, sampler.Size())
 	for it := Set.NewIterator(sampler.timeIndex); it.HasCurr(); it.Next() {
 		sample := it.GetCurr().(*Sample)
-		jsonSample := &JsonSample{
-			Time:           sample.time.Format(time.RFC3339Nano),
-			ExpirationTime: sample.expirationTime.Format(time.RFC3339Nano),
-			Val:            convertVal(sample.val),
-		}
-		j, err := json.Marshal(jsonSample)
-		if err != nil {
-			return nil, err
-		}
-		samples = append(samples, string(j))
+		samples = append(samples, &JsonSample{
+			Time:           sample.time,
+			ExpirationTime: sample.expirationTime,
+			Val:            sample.val.(int),
+		})
 	}
 
 	ret, err := json.Marshal(samples)
@@ -340,40 +333,31 @@ func (sampler *SimpleSampler) ConsultEndpoint(lock *sync.Mutex,
 }
 
 // Helper for consulting maximums values (request and latencies)
-func (sampler *SimpleSampler) ConsultMaximumsEndpoint(lock *sync.Mutex,
-	convertVal func(interface{}) string) ([]byte, error) {
+func (sampler *SimpleSampler) ConsultMaximumsEndpoint(lock *sync.Mutex) ([]byte, error) {
 
 	lock.Lock()
 	defer lock.Unlock()
 
-	maxSamples := make([]string, 0, sampler.maxRequests.Size())
+	maxSamples := make([]*JsonSample, 0, sampler.maxRequests.Size())
 	for it := Set.NewIterator(sampler.maxRequests); it.HasCurr(); it.Next() {
 		sample := it.GetCurr().(*Sample)
 		jsonSample := &JsonSample{
-			Time:           sample.time.Format(time.RFC3339Nano),
-			ExpirationTime: sample.expirationTime.Format(time.RFC3339Nano),
-			Val:            convertVal(sample.val),
+			Time:           sample.time,
+			ExpirationTime: sample.expirationTime,
+			Val:            sample.val.(int),
 		}
-		j, err := json.MarshalIndent(jsonSample, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		maxSamples = append(maxSamples, string(j))
+		maxSamples = append(maxSamples, jsonSample)
 	}
 
-	latencySamples := make([]string, 0, sampler.maxLatencies.Size())
+	latencySamples := make([]*JsonLatencySample, 0, sampler.maxLatencies.Size())
 	for it := Set.NewIterator(sampler.maxLatencies); it.HasCurr(); it.Next() {
 		sample := it.GetCurr().(*LatencySample)
 		milliseconds := sample.latency.Nanoseconds() / 1e6
-		jsonSample := JsonLatencySample{
-			Latency:  strconv.Itoa(int(milliseconds)) + " ms",
-			LastTime: sample.lastTime.String(),
+		jsonSample := &JsonLatencySample{
+			Latency:  int(milliseconds),
+			LastTime: sample.lastTime,
 		}
-		j, err := json.MarshalIndent(jsonSample, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		latencySamples = append(latencySamples, string(j))
+		latencySamples = append(latencySamples, jsonSample)
 	}
 
 	ret := &JsonMaximums{

@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"math"
 	"math/rand"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -194,9 +193,7 @@ func TestSimpleSampler_consultEndpoint(t *testing.T) {
 		sampler.Append(time.Now(), 100+rand.Intn(BaseValue))
 	}
 
-	b, _ := sampler.ConsultEndpoint(lock, func(i interface{}) string {
-		return strconv.Itoa(i.(int))
-	})
+	b, _ := sampler.ConsultEndpoint(lock)
 
 	fmt.Println(string(b))
 }
@@ -289,9 +286,7 @@ func TestSimpleSampler_updateMaxLatency(t *testing.T) {
 		fmt.Println(sample.val, " ", sample.time, " ", sample.expirationTime)
 	}
 
-	str, err := sampler.ConsultMaximumsEndpoint(&stateLock, func(i interface{}) string {
-		return strconv.Itoa(i.(int))
-	})
+	str, err := sampler.ConsultMaximumsEndpoint(&stateLock)
 	assert.Nil(t, err)
 	fmt.Println(string(str))
 }
