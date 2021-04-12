@@ -38,15 +38,17 @@ func cmpLatency(s1, s2 interface{}) bool {
 type SimpleSampler struct {
 	timeIndex    *Set.Treap // stores the samples indexed by time
 	valIndex     *Set.Treap // stores the samples indexed by value
-	maxLatencies *Set.Treap // Subset of maximum latencies detected
+	maxLatencies *Set.Treap // Subset of maximum latencies detected. Used for keep order of samples that have not expired
 	maxRequests  *Set.Treap // Subset of maximum number of request detected
-	capacity     int
-	subCapacity  int
-	duration     time.Duration
+	capacity     int        // Maximum number of samples that I can contain
+	subCapacity  int        // I store the largest maxRequest and latencies that I have seen.
+	// This is the maximum number of largest maxRequest that I am able to save
+	duration time.Duration // Every sample has this duration
 }
 
-// Create a simple sampler with capacity as maximum number of entries and a duration time. The entries will
-// be compared with the function less
+// NewSampler Create a simple sampler with capacity as maximum number of entries of duration time. The entries will
+// be compared with the function less. The sampler keeps two subsets with the maximums values of maxRequests and
+// the maximum latencies.
 func NewSampler(capacity int, duration time.Duration, subSetCapacity int,
 	cmpVal func(s1, s2 interface{}) bool) *SimpleSampler {
 
@@ -67,70 +69,13 @@ func NewSampler(capacity int, duration time.Duration, subSetCapacity int,
 		duration:    duration,
 	}
 
+	// subSetCapacity could be unbound. It is not the ideal because is slower, but possible
 	if subSetCapacity != 0 {
 		ret.maxLatencies = Set.NewTreap(cmpLatency)
 		ret.maxRequests = Set.NewTreap(cmpReq)
 	}
 
 	return ret
-}
-
-func (sampler *SimpleSampler) updateMaxRequests(sample *Sample) {
-
-	if sampler.subCapacity == 0 { // is subset active?
-		return
-	}
-
-	if sampler.maxRequests.Size() < sampler.subCapacity { // is subset full?
-		// Not ==> just insert it or update if if it is already inserted
-		_, _ = sampler.maxRequests.SearchOrInsert(sample)
-		return
-	}
-
-	// In this point subset is full ==> eventually we might insert this sample
-	minSample := sampler.maxRequests.Min()
-	if sample.val.(int) < minSample.(*Sample).val.(int) {
-		return // this sample does not belong to the subset of the maximum number of requests
-	}
-
-	wasInserted, _ := sampler.maxRequests.SearchOrInsert(sample)
-	if wasInserted {
-		sampler.maxRequests.RemoveByPos(0) // remove the minimum
-	}
-}
-
-func (sampler *SimpleSampler) updateMaxLatency(latency time.Duration, currTime time.Time) {
-
-	if sampler.subCapacity == 0 {
-		return
-	}
-
-	latencySample := &LatencySample{
-		latency:  latency,
-		lastTime: currTime,
-	}
-
-	if sampler.maxLatencies.Size() < sampler.subCapacity { // subset full?
-		// Not ==> ust insert it or update if if it is already inserted
-		wasInserted, s := sampler.maxLatencies.SearchOrInsert(latencySample)
-		if !wasInserted {
-			s.(*LatencySample).lastTime = currTime // update
-		}
-		return
-	}
-
-	// In this point subset is full ==> eventually we might insert this sample
-	minLatencySample := sampler.maxLatencies.Min()
-	if latency < minLatencySample.(*LatencySample).latency {
-		return // this sample does not belong to the subset of the maximum number of requests
-	}
-
-	wasInserted, s := sampler.maxLatencies.SearchOrInsert(latencySample)
-	if !wasInserted {
-		s.(*LatencySample).lastTime = currTime // update
-	} else {
-		sampler.maxLatencies.RemoveByPos(0) // remove minimum latency present in the set
-	}
 }
 
 // Set new values for capacity and duration
@@ -171,62 +116,96 @@ func (sampler *SimpleSampler) Set(capacity int, duration time.Duration) (err err
 	return
 }
 
+// Size Return the number of possible valid samples (that have not expired) stored in the sampler. Notice
+// that this number is a hint, as the samples could have expired
 func (sampler *SimpleSampler) Size() int { return sampler.timeIndex.Size() }
 
-// Add a new sample at time currTime with a specific val. If it already exists a sample containing
+// Append Add a new sample at time currTime with a specific val. If it already exists a sample containing
 // val, then its time is updated
 func (sampler *SimpleSampler) Append(currTime time.Time, val interface{}) {
 
-	sample := &Sample{val: val}
+	sample := &Sample{val: val} // Create a new Sample ptr where putting val
 
-	wasInserted, s := sampler.valIndex.SearchOrInsert(sample)
-	if !wasInserted { // a sample with val is already inserted?
-		// yes! ==> update it with current time
-		sampler.timeIndex.Remove(s) // remove from time index
-		sample = s.(*Sample)        // previously built sample is discharged
+	wasInserted, s := sampler.valIndex.SearchOrInsert(sample) // test the sample already exists
+	if !wasInserted {                                         // a sample with val is already inserted?
+		// yes! ==> we just update it with current time
+		sampler.timeIndex.Remove(s) // remove from time index. It could fail if there is not sample store in timeIndex
+		sample = s.(*Sample)        // previously allocated sample is discharged
 	}
 
 	sample.time = currTime // update time with currTime
 	sample.expirationTime = currTime.Add(sampler.duration)
 
 	n := sampler.valIndex.Size()
-	if n > sampler.capacity {
-		s := sampler.timeIndex.RemoveByPos(0) // oldest entry
-		v := sampler.valIndex.Remove(s)
+	if n > sampler.capacity { // sampler full?
+		// Yes ==> we must delete the less pertinent entry so that we guarantee the set is still bounded
+		s := sampler.timeIndex.RemoveByPos(0) // remove the oldest entry
+		v := sampler.valIndex.Remove(s)       // now I remove
 		if v != s {
 			panic("Internal error")
 		}
 	}
 
-	_ = sampler.timeIndex.Insert(sample) // it is impossible sample.time is duplicated because is after more recent
+	_ = sampler.timeIndex.Insert(sample) // and now we put the new and fresh value in our time index
 
-	sampler.updateMaxRequests(sample)
+	sampler.updateMaxRequests(sample) // from here we update val index with this helper
 }
 
-// Returns the maximum valid sample respect the specified duration
+// Helper to be called when a new sample is inserted. The goal is
+func (sampler *SimpleSampler) updateMaxRequests(sample *Sample) {
+
+	if sampler.subCapacity == 0 { // is subset active?
+		return
+	}
+
+	if sampler.maxRequests.Size() < sampler.subCapacity { // is subset full?
+		// Not ==> just insert it or update if if it is already inserted
+		_, _ = sampler.maxRequests.SearchOrInsert(sample)
+		return
+	}
+
+	// In this point subset is full ==> eventually we might have to insert this sample
+	minSample := sampler.maxRequests.Min()
+	if sample.val.(int) < minSample.(*Sample).val.(int) { // sample.val < minimum store?
+		return // this sample does not belong to the subset of the maximum number of requests
+	}
+
+	// In this case, this sample must belong to the set ==> we insert it
+	wasInserted, _ := sampler.maxRequests.SearchOrInsert(sample)
+	if wasInserted {
+		// sample val could already belong to the set. But not in this case, because it was inserted. Now,
+		// because the set is full, we remove the minimum
+		sampler.maxRequests.RemoveByPos(0) // remove the minimum
+	}
+}
+
+// GetMax Returns the maximum valid sample. By valid we mean that the sample has not expired
 func (sampler *SimpleSampler) GetMax(currTime time.Time) *Sample {
 
 	if sampler.Size() == 0 {
 		return nil
 	}
 
-	newestSample := sampler.timeIndex.Max().(*Sample)
-	if newestSample.expirationTime.Before(currTime) { // all entries expired?
-		// Yes ==> clean all indexes
+	moreRecentSample := sampler.timeIndex.Max().(*Sample)
+	if moreRecentSample.expirationTime.Before(currTime) { // all entries expired?
+		// if moreRecentSample expired ==> all the remaining too ==> we delete them
 		sampler.timeIndex.Clear()
 		sampler.valIndex.Clear()
 		return nil
 	}
 
-	ret := sampler.valIndex.Max().(*Sample)
-	for ret.expirationTime.Before(currTime) {
-		// In this case ret is not valid in period
+	// Now we proceed to examine through the values starting by the maximum until finding the first one that
+	// is valid; i.e. that has not expired yet. Because moreRecentSample is valid, it is sure that we will find
+	// a valid sample. Notice that we perform this search through valIndex instead of timeIndex
+	currMaxValueSample := sampler.valIndex.Max().(*Sample)
+	for currMaxValueSample.expirationTime.Before(currTime) { // currMaxValueSample expired
+		// yes ==> we remove from out indexes
 		s := sampler.valIndex.RemoveByPos(sampler.valIndex.Size() - 1).(*Sample) // This is the max
 		_ = sampler.timeIndex.Remove(s)
-		ret = sampler.valIndex.Max().(*Sample)
+		currMaxValueSample = sampler.valIndex.Max().(*Sample) // get a new one for being tested
 	}
 
-	return ret
+	return currMaxValueSample
 }
 
 func (sampler *SimpleSampler) OldestTime() *Sample {
@@ -311,7 +290,42 @@ type JsonMaximums struct {
 	MaxLatencies []*JsonLatencySample
 }
 
-// Helper for consulting all the samples. To be used by and endpoint
+// Helper
+func (sampler *SimpleSampler) updateMaxLatency(latency time.Duration, currTime time.Time) {
+
+	if sampler.subCapacity == 0 {
+		return
+	}
+
+	latencySample := &LatencySample{
+		latency:  latency,
+		lastTime: currTime,
+	}
+
+	if sampler.maxLatencies.Size() < sampler.subCapacity { // subset full?
+		// Not ==> ust insert it or update if if it is already inserted
+		wasInserted, s := sampler.maxLatencies.SearchOrInsert(latencySample)
+		if !wasInserted {
+			s.(*LatencySample).lastTime = currTime // update
+		}
+		return
+	}
+
+	// In this point subset is full ==> eventually we might insert this sample
+	minLatencySample := sampler.maxLatencies.Min()
+	if latency < minLatencySample.(*LatencySample).latency {
+		return // this sample does not belong to the subset of the maximum number of requests
+	}
+
+	wasInserted, s := sampler.maxLatencies.SearchOrInsert(latencySample)
+	if !wasInserted {
+		s.(*LatencySample).lastTime = currTime // update
+	} else {
+		sampler.maxLatencies.RemoveByPos(0) // remove minimum latency present in the set
+	}
+}
+
+// ConsultEndpoint Helper for consulting all the samples. To be used by and endpoint
 func (sampler *SimpleSampler) ConsultEndpoint(lock *sync.Mutex) ([]byte, error) {
 
 	lock.Lock()
@@ -332,7 +346,7 @@ func (sampler *SimpleSampler) ConsultEndpoint(lock *sync.Mutex) ([]byte, error) 
 	return ret, err
 }
 
-// Helper for consulting maximums values (request and latencies)
+// ConsultMaximumsEndpoint Helper for consulting maximums values (request and latencies)
 func (sampler *SimpleSampler) ConsultMaximumsEndpoint(lock *sync.Mutex) ([]byte, error) {
 
 	lock.Lock()
@@ -368,7 +382,7 @@ func (sampler *SimpleSampler) ConsultMaximumsEndpoint(lock *sync.Mutex) ([]byte,
 	return json.MarshalIndent(ret, "", "  ")
 }
 
-// Helper for stringficate a duration type
+// FmtDuration Helper for stringficate a duration type
 func FmtDuration(d time.Duration) string {
 	d = d.Round(time.Minute)
 	h := d / time.Hour
@@ -377,7 +391,12 @@ func FmtDuration(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
-// Helpers for sampling when request arrives
+// RequestArrives Helper for sampling when request arrives. When a new request is detected, the counter must
+// be updated. Such a counter (requestCount) is passed to the sampler through this routine. The lock assures
+// that operation is atomic and keeps safe the sampler state. notifyToScaler is a pointer to a function with
+// should communicate with the scaler.
+// The routine returns the arrivalTime to the sample whose value will be stored as timestamp along with its
+// expiration time
 func (sampler *SimpleSampler) RequestArrives(requestCount *int, lock *sync.Mutex,
 	notifyToScaler func(currTime time.Time)) (arrivalTime time.Time) {
 
@@ -391,9 +410,9 @@ func (sampler *SimpleSampler) RequestArrives(requestCount *int, lock *sync.Mutex
 	return arrivalTime
 }
 
-// Helper for sampling when request finishes.
-// The reason from which itWasSuccessful is a pointer is for handling from defer clauses which
-// receive copies
+// RequestFinishes Analogously, when a request finishes, the requestCount must decrease and update it to the
+// sampler. Sometimes, the request could fail. To indicate that, use the itWasSuccessful bool with must set
+// to true once it is sure that the request succeeded
 func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mutex,
 	arrivalTime time.Time, itWasSuccessful *bool) time.Duration {
 
@@ -411,7 +430,7 @@ func (sampler *SimpleSampler) RequestFinishes(requestCount *int, lock *sync.Mute
 	return latency
 }
 
-// Helper for reading number of samples. It does not take lock
+// GetNumRequest Helper for reading number of samples. It does not take lock
 func (sampler *SimpleSampler) GetNumRequest(currTime time.Time) int {
 
 	res := sampler.GetMax(currTime)
@@ -421,7 +440,7 @@ func (sampler *SimpleSampler) GetNumRequest(currTime time.Time) int {
 	return res.val.(int)
 }
 
-// Helper similar than above but retrieves full sample
+// GetMaxSample Helper similar than above but retrieves full sample
 func (sampler *SimpleSampler) GetMaxSample(currTime time.Time) (int, time.Time, time.Time) {
 
 	sample := sampler.GetMax(currTime)
