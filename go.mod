@@ -3,7 +3,7 @@ module github.com/geniussportsgroup/simple_sampler
 go 1.21
 
 require (
-	github.com/geniussportsgroup/treaps v1.3.0-pre2
+	github.com/geniussportsgroup/treaps v1.3.0
 	github.com/stretchr/testify v1.7.0
 )
 
